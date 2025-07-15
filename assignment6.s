@@ -1,105 +1,85 @@
-    .globl    copy             # Copy an N-by-N character matrix A into C
-# ***** Version 2 *****
+# Copy an n-by-n character matrix A into B
+# rdi=A | rsi=B | edx=n
+
+    .globl copy
+
 copy:
-# A in %rdi, C in %rsi, N in %edx
+    testl %edx, %edx
+    jle exit            # if n <= 0 return
 
-# Using A and C as pointers
+    imulq %rdx, %rdx
+    addq %rdi, %rdx     # rdx = A + n^2
 
-# This function is not a "caller", i.e., it does not call functions. 
-# It is a leaf function (a callee). 
-# Hence it does not have the responsibility of saving "caller-saved" registers 
-# such as %rax, %rdi, %rsi, %rdx, %rcx, and %r8 to %r11.
-# This signifies that it can use these registers without 
-# first saving their content if it needs to use registers.
+loop:
+    # B[i][j] = A[i][j]
+    movb (%rdi), %al
+    movb %al, (%rsi)
 
-# Set up registers
-    xorl %eax, %eax            # set %eax to 0
-    xorl %ecx, %ecx            # i = 0 (row index i is in %ecx)
-
-# For each row
-rowLoop:
-    xorl %r8d, %r8d            # j = 0 (column index j in %r8d)
-    cmpl %edx, %ecx            # while i < N (i - N < 0)
-    jge doneWithRows
-
-# For each cell of this row
-colLoop:
-    cmpl %edx, %r8d            # while j < N (j - N < 0)
-    jge doneWithCells
-
-# Copy the element A points to (%rdi) to the cell C points to (%rsi)
-    movb (%rdi), %r9b          # temp = element A points to
-    movb %r9b, (%rsi)          # cell C points to = temp
-
-# Update A and C so they now point to their next element 
+    # Advance pointers
     incq %rdi
     incq %rsi
 
-    incl %r8d                  # j++ (column index in %r8d)
-    jmp colLoop                # go to next cell
+    cmpq %rdx, %rdi
+    jl loop             # if A < &A[n-1][n] continue
 
-# Go to next row
-doneWithCells:
-    incl %ecx                  # i++ (row index in %ecx)
-    jmp rowLoop                # go to next row
-
-doneWithRows:                  # bye! bye!
+exit:
     ret
 
 
-#####################
-	.globl	transpose       # Transpose an n-by-n character matrix A
+# Transpose an n-by-n character matrix A
 # rdi=A | esi=n
+
+    .globl transpose
 
 transpose:
     leal -1(%esi), %eax     # eax = n-1
 
-    movl $-1, %edx          # i = -1
+    xorl %edx, %edx          # i = 0
 
-row_loop:
-    incl %edx               # i++
+rowLoop:
     cmpl %eax, %edx
     jge end                 # if i >= n-1 return
 
     leaq 1(%rsi), %rcx      # tmp = n+1
     imulq %rdx, %rcx        # tmp *= i
-    leaq (%rdi,%rcx), %r8
-    movq %r8, %r9           # r8 = r9 = &A[i][i]
+    leaq 1(%rdi,%rcx), %r8  # r8 = &A[i][i+1]
+    leaq (%r8,%rax), %r9    # r9 = &A[i+1][i]
 
-    movl %edx, %ecx         # j = i
+    leal 1(%edx), %ecx      # j = i+1
 
-col_loop:
-    incl %ecx               # j++
-    cmpl %esi, %ecx
-    jge row_loop            # if j >= n goto row_loop
-
-    incq %r8                # r8 = &A[i][j]
-    addq %rsi, %r9          # r9 = &A[j][i]
-
+colLoop:
     # Swap A[i][j] with A[j][i]
     movb (%r8), %r10b
     movb (%r9), %r11b
     movb %r10b, (%r9)
     movb %r11b, (%r8)
 
-    jmp col_loop
+    incq %r8                # r8 = &A[i][j+1]
+    addq %rsi, %r9          # r9 = &A[j+1][i]
+
+    incl %ecx               # j++
+    cmpl %esi, %ecx
+    jl colLoop              # if j < n continue
+
+    incl %edx               # i++
+    jmp rowLoop             # else break
 
 end:
 	ret
 
 
-##########################
-	.globl	reverseColumns      # Reverse the columns of an n-by-n character matrix A
+# Reverse the columns of an n-by-n character matrix A
 # rdi=A | esi=n
+
+    .globl reverseColumns
 
 reverseColumns:
     movl %esi, %eax             # eax = n
-    shrl $1, %eax               # eax /= 2
+    sarl $1, %eax               # eax /= 2
 
-    movl $-1, %ecx              # j = -1
+    xorl %ecx, %ecx              # j = 0
 
-loop_cols:
-    incl %ecx                   # j++
+col_loop:
     cmpl %eax, %ecx
     jge done                    # if j >= n/2 return
 
@@ -109,10 +89,7 @@ loop_cols:
 
     xorl %edx, %edx             # i = 0
 
-loop_rows:
-    cmpl %esi, %edx
-    jge loop_cols               # if i >= n goto loop_cols
-
+row_loop:
     # Swap A[i][j] with A[i][n-j-1]
     movb (%r8), %r10b
     movb (%r9), %r11b
@@ -123,7 +100,11 @@ loop_rows:
     addq %rsi, %r9              # r9 = &A[i+1][n-j-1]
 
     incl %edx                   # i++
-    jmp loop_rows
+    cmpl %esi, %edx
+    jl row_loop                 # if i < n continue
+
+    incl %ecx                   # j++
+    jmp col_loop                # else break
 
 done:
 	ret
